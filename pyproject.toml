@@ -1,6 +1,6 @@
 [project]
 name = "entrel"
-version = "0.1.0"
+version = "0.1.1"
 description = "Generate simple Entity Relationship diagrams in LaTeX from TOML files."
 authors = [
     {name = "Inti",email = "intimyp@gmail.com"}
