@@ -67,6 +67,8 @@ class EntityConnection(enum.Enum):
 class AttributeDirection(enum.Enum):
     LEFT = "left"
     RIGHT = "right"
+    UP = "up"
+    DOWN = "down"
 
 
 @dataclasses.dataclass
@@ -98,6 +100,7 @@ class LayoutObject:
     column_index: int
     object: Entity | Relationship
     direction: AttributeDirection
+    distance: str
 
 
 @dataclasses.dataclass
@@ -129,6 +132,7 @@ def generate(definition_file: str, output_file: str, template: str = TEMPLATE) -
                 column_index=obj["position"][1],
                 object=ents[id_] if id_ in ents else rels[id_],
                 direction=AttributeDirection(obj.get("direction", "right")),
+                distance=obj.get("distance", "3cm")
             )
             for id_, obj in data["layout"]["obj"].items()
         },
@@ -222,23 +226,31 @@ def _draw_objects(layout: Layout) -> str:
 
 
 def _draw_attributes(layout: Layout):
-    lines = []
-    indices = itertools.product(range(layout.rows), range(layout.columns))
-    for row, col in indices:
-        obj = layout.objects.get((row, col))
-        if obj and obj.object.attributes:
-            id_ = obj.object.identifier
-            pos = _get_attr_position(obj.direction, id_)
-            lines.append(f"\\matrix ({id_}att) [attrs] at {pos}")
-            lines.append("{")
-            for attr in obj.object.attributes:
-                lines.append(
-                    f"\\underline{{{attr.name}}}\\\\"
-                    if attr.type == AttributeType.KEY
-                    else f"{attr.name}\\\\"
-                )
-            lines.append("};")
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            _draw_object_attributes(obj) 
+            for row, col in itertools.product(range(layout.rows), range(layout.columns))
+            if (obj:=layout.objects.get((row, col))) is not None and obj.object.attributes
+        ]
+    )
+
+def _draw_object_attributes(obj: LayoutObject) -> str:
+    lines ="\n".join([
+            _draw_attribute(attr, obj.direction, attr == obj.object.attributes[-1])
+            for attr in obj.object.attributes
+    ])
+    return (
+        f"\\matrix ({obj.object.identifier}att) [attrs] at "
+        f"{_get_attr_position(obj.direction, obj.object.identifier, obj.distance)}"
+        f"{{\n{lines}\n}};"
+    )
+
+
+def _draw_attribute(attr: Attribute, direction: AttributeDirection, is_last: bool) -> str:
+    separator = r"\\" if is_last or direction in [AttributeDirection.LEFT, AttributeDirection.RIGHT] else "&"
+    text = f"\\underline{{{attr.name}}}" if attr.type == AttributeType.KEY else attr.name
+    return f"{text}{separator}"
+
 
 
 def _draw_connections(layout: Layout) -> str:
@@ -282,12 +294,18 @@ def _get_arrow(conn_type: EntityConnection) -> str:
             raise ValueError(f"Unknown connection type: {conn_type}")
 
 
-def _get_attr_position(direction: AttributeDirection, id_: str):
+def _get_attr_position(direction: AttributeDirection, id_: str, distance: str):
     match direction:
         case AttributeDirection.LEFT:
-            return f"($({id_}) + (-3cm, 0)$)"
+            return f"($({id_}) + (-{distance}, 0)$)"
         case AttributeDirection.RIGHT:
-            return f"($({id_}) + (3cm, 0)$)"
+            return f"($({id_}) + ({distance}, 0)$)"
+        case AttributeDirection.UP:
+            return f"($({id_}) + (0, {distance})$)"
+        case AttributeDirection.DOWN:
+            return f"($({id_}) + (0, -{distance})$)"
+        case _:
+            raise ValueError(f"Unknown attribute direction: {direction}")
 
 
 def _get_type(type_: EntityType | RelationshipType) -> str:
@@ -302,3 +320,5 @@ def _get_type(type_: EntityType | RelationshipType) -> str:
             return "weakrel"
         case RelationshipType.ISA:
             return "isarel"
+        case _:
+            raise ValueError(f"Unknown type: {type_}")
